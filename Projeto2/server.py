@@ -24,19 +24,6 @@ import numpy as np
 #serialName = "/dev/tty.usbmodem1411" # Mac    (variacao de)
 serialName = "COM4"                  # Windows(variacao de)
 
-
-comandos_dic = {
-    b'\x00\x00\x00\x00': "Comando 1",
-    b'\x00\x00\xAA\x00': "Comando 2",
-    b'\xAA\x00\x00': "Comando 3",
-    b'\x00\xAA\x00': "Comando 4",
-    b'\x00\x00\xAA': "Comando 5",
-    b'\x00\xAA': "Comando 6",
-    b'\xAA\x00': "Comando 7",
-    b'x\00': "Comando 8",
-    b'\xFF': "Comando 9",
-}
-
 def main():
     try:
         print("Iniciou o main")
@@ -48,68 +35,50 @@ def main():
         com1.enable()
         #Se chegamos até aqui, a comunicação foi aberta com sucesso. Faça um print para informar.
         print("Abriu a comunicação")
-                 
-        # Definindo o timeout em 5 segundos
-        timeout = 5
 
         # Esperando byte de sacrifício
+        print("esperando 1 byte de sacrifício")
         rxBuffer, nRx = com1.getData(1)
-        print(rxBuffer)
         com1.rx.clearBuffer() # Limpa o buffer de recebimento para receber os comandos
         time.sleep(0.1)
 
-        # Recebendo o número de comandos
-        rxBuffer, nRx = com1.getData(1)
-        numero_comandos = int.from_bytes(rxBuffer, byteorder='little')
-        print("O número de comandos é: {}" .format(numero_comandos))
-        time.sleep(0.1)
+        comandos = []
 
-        #Contador para contar o número de comandos recebidos
-        c = 0
+        rxBuffer, nRx = com1.getData(1) # Recebe o tamanho do primeiro comando
 
-        verifica_timeout = float(time.time()) # Variável para verificar se o timeout foi atingido
-        print("Verifica timeout: {}" .format(verifica_timeout))
-        deu_timeout = float(time.time() - verifica_timeout) 
-        print("Deu timeout: {}" .format(deu_timeout))
-
-        # Função que atualiza o tempo para verificar timeout
-        def atualiza_timeout(tempo):
-            tempo_atual = float(time.time())
-            tempo_referencia = float(tempo_atual - tempo)
-            return tempo_referencia
-        
         #Loop para receber os comandos do client
-        while (c < numero_comandos) and (deu_timeout < timeout):
-            print("Recebendo o tamanho do comando")
-            rxBuffer, nRx = com1.getData(1)
-            time.sleep(0.1)
-            tamanho_esperado = int.from_bytes(rxBuffer, byteorder='little')
-            time.sleep(0.5)
-            print("O tamanho esperado do comando é: {}" .format(tamanho_esperado))
-            time.sleep(0.1)
-            rxBuffer, nRx = com1.getData(tamanho_esperado)
-            print('Comando recebido: {}' .format(rxBuffer))
-            time.sleep(0.1)
-            c += 1
-            deu_timeout = atualiza_timeout(verifica_timeout)
-            verifica_timeout = float(time.time())
-        
-        # Verifica se o timeout foi atingido
-        if deu_timeout >= timeout:
-            print("Timeout atingido")
-            com1.disable()
-            
-        else:
-            print('----------------------------------------')
-            print('O número de comandos recebidos foi: {}' .format(c))
-            print('----------------------------------------')
+        con = True
+        while con:
 
-        # Encerra comunicação
-        print("-------------------------")
-        print("Comunicação encerrada")
-        print("-------------------------")
-        com1.disable()
-        
+            print('começando o loop')
+
+            if rxBuffer[0] == 17: #b'\x11' - byte de finalização
+                print('')
+                print("________________Finalizando comunicação________________")
+                print('')
+
+                txBuffer = len(comandos).to_bytes(1, byteorder='big')
+                print(txBuffer)
+                #print(f'O tamanho do array é {len(txBuffer)}')
+
+                txSize = com1.tx.getStatus()
+                com1.sendData(np.asarray(txBuffer))
+                print(f'Server enviou {txBuffer.to_bytes(1, byteorder="big")} comandos')
+                #print(f'Server enviou {txSize} bytes')
+
+                # Encerra comunicação
+                print("-------------------------")
+                print("Comunicação encerrada")
+                print("-------------------------")
+                com1.disable()
+                con = False
+
+            else:
+                rxBuffer, nRx = com1.getData(rxBuffer[0]) # Recebe o tamanho do próximo comando  
+                print(f'Server recebeu o comando {rxBuffer}')
+                comandos.append(rxBuffer)
+                rxBuffer, nRx = com1.getData(1) # Atualiza o rxBuffer para receber o próximo comando ou finalizar a comunicação
+
     except Exception as erro:
         print("ops! :-\\")
         print(erro)

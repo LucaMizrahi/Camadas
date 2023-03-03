@@ -49,14 +49,14 @@ def verifica_ordem(recebido, numero_pacote_atual): # Função usada pelo server 
 
 def monta_payload(info):
     tamanho = len(info)
-    pacotes = ceil(tamanho/65) # 65 é o tamanho máximo do payload
+    pacotes = ceil(tamanho/50) # 50 é o tamanho máximo do payload
     payloads = []
     for i in range(pacotes):
         if i == pacotes-1:
-            payload = info[i*65:tamanho]
+            payload = info[i*50:tamanho]
             print(f'tamanho do último payload:{len(payload)}')
         else:
-            payload = info[i*65:(i+1)*65]
+            payload = info[i*50:(i+1)*50]
             print(f'tamanho dos payloads intermediários:{len(payload)}')
         payloads.append(payload)
     return payloads

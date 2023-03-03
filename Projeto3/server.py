@@ -13,6 +13,9 @@
 from enlace import *
 import time
 import numpy as np
+from funcoes import *
+from operator import truediv
+
 
 # voce deverá descomentar e configurar a porta com através da qual ira fazer comunicaçao
 #   para saber a sua porta, execute no terminal :
@@ -23,6 +26,26 @@ import numpy as np
 #serialName = "/dev/ttyACM0"           # Ubuntu (variacao de)
 #serialName = "/dev/tty.usbmodem1411" # Mac    (variacao de)
 serialName = "COM4"                  # Windows(variacao de)
+
+
+'''
+Informações do Head: (12 bytes de tamanho) - Serve para passar informações sobre a msg que será enviada
+
+    1 byte - tipo de mensagem  - b'\x01' - Tamanho do payload incorreto, b'\x02' - Tamanho do payload correto
+    2 byte - Verifica handshake 
+    3 byte - Numero de bytes do payload
+    4 .. 12 byte - placeholders
+
+Bytes de EOP: (3 bytes de tamanho) - Serve para indicar o fim da mensagem
+
+    1 byte - b'\x01'
+    2 byte - b'\x02'
+    3 byte - b'\x03'
+'''
+
+HEAD_server_handshake = bytes([9,1,0,0,0,0,0,0,0,0,0,0])
+
+EOP = bytes([1, 2, 3]) 
 
 def main():
     try:
@@ -41,43 +64,89 @@ def main():
         rxBuffer, nRx = com1.getData(1)
         com1.rx.clearBuffer() # Limpa o buffer de recebimento para receber os comandos
         time.sleep(0.1)
+        print('byte de sacrifício recebido')	
 
-        comandos = []
+        HEAD_client_handshake, _ = com1.getData(12)
+        time.sleep(0.1)
+        is_handshake_correct = verifica_handshake(HEAD_client_handshake, False)
+        total_packages = HEAD_client_handshake[4]
 
-        rxBuffer, nRx = com1.getData(1) # Recebe o tamanho do primeiro comando
-
-        #Loop para receber os comandos do client
-        con = True
-        while con:
-
-            print('começando o loop')
-
-            if rxBuffer[0] == 17: #b'\x11' - byte de finalização
-                print('')
-                print("________________Finalizando comunicação________________")
-                print('')
-
-                txBuffer = len(comandos).to_bytes(1, byteorder='big')
-                print(txBuffer)
-                #print(f'O tamanho do array é {len(txBuffer)}')
-
-                txSize = com1.tx.getStatus()
-                com1.sendData(np.asarray(txBuffer))
-                print(f'Server enviou {txBuffer.to_bytes(1, byteorder="big")} comandos')
-                #print(f'Server enviou {txSize} bytes')
-
-                # Encerra comunicação
-                print("-------------------------")
-                print("Comunicação encerrada")
-                print("-------------------------")
-                com1.disable()
-                con = False
-
+        if is_handshake_correct:
+            tamanho_payload = int(HEAD_client_handshake[2])
+            resto_handshake_client, _ = com1.getData(tamanho_payload+3)
+            time.sleep(0.1)
+            handshake_client = HEAD_client_handshake + resto_handshake_client
+            verificacao_eop = verifica_eop(HEAD_client_handshake, handshake_client)
+            if not verificacao_eop:
+                return
             else:
-                rxBuffer, nRx = com1.getData(rxBuffer[0]) # Recebe o tamanho do próximo comando  
-                print(f'Server recebeu o comando {rxBuffer}')
-                comandos.append(rxBuffer)
-                rxBuffer, nRx = com1.getData(1) # Atualiza o rxBuffer para receber o próximo comando ou finalizar a comunicação
+                handshake_server = np.asarray(HEAD_server_handshake + EOP)
+                com1.sendData(handshake_server)
+                time.sleep(0.1)
+                print("Handshake do servidor enviado")
+
+        img_recebida = b''
+        pacote_antes = 1
+        pacotes_recebidos = 0
+
+        while True:
+            HEAD_client, _ = com1.getData(12)
+            time.sleep(0.5)
+            tamanho_payload, pacote_atual, _ = trata_head(HEAD_client)
+            if pacote_atual != pacote_antes:
+                print("Pacote recebido fora de ordem")
+                HEAD_server = bytes([1,0,0,0,0,0,0,0,0,0,0,0])
+                com1.sendData(HEAD_server + EOP)
+                com1.disable(); return
+            else:
+                HEAD_server = bytes([2,0,0,0,0,0,0,0,0,0,0,0])
+                com1.sendData(HEAD_server + EOP)
+                time.sleep(0.5)
+
+            pacotes_recebidos += 1
+            pacote_antes = pacote_atual
+
+            resto_pacote, _ = com1.getData(tamanho_payload+3)
+            time.sleep(0.1)
+
+            pacote_client = HEAD_client + resto_pacote
+            HEAD_client, payload_client, EOP_client = trata_pacote(pacote_client)
+            img_recebida += payload_client 
+            
+            # Verificando se o eop está no lugar correto
+            is_eop_correct = verifica_eop(HEAD_client, pacote_client)
+            if not is_eop_correct:
+                print("EOP fora do lugar")
+                com1.disable(); return
+            if pacotes_recebidos == total_packages:
+                break
+            if pacotes_recebidos != total_packages:
+                pacote_antes += 1
+        
+        HEAD_client_final = bytes([1,0,0,0,0,0,0,0,0,0,0,0])
+        if pacotes_recebidos != total_packages:
+            print("Pacotes recebidos diferente do total de pacotes")
+        else:
+            HEAD_client_final = bytes([1,0,0,0,1,0,0,0,0,0,0,0])
+            print("Transmissão finalizada com sucesso")
+        
+        # Envia o pacote final para o cliente
+        pacote_final = HEAD_client_final + EOP
+        com1.sendData(pacote_final)
+        time.sleep(0.5)
+
+        img_recebida_nome = 'Projeto3/img/img_recebida.png'
+        print("Salvando imagem recebida")
+        with open(img_recebida_nome, 'wb') as f:
+            f.write(img_recebida)
+            print("Imagem salva com sucesso")
+            f.close()
+
+        # Encerra comunicação
+        print("-------------------------")
+        print("Comunicação encerrada")
+        print("-------------------------")
+        com1.disable()
 
     except Exception as erro:
         print("ops! :-\\")

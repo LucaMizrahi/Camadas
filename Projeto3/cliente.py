@@ -58,7 +58,6 @@ def main():
         #Se chegamos até aqui, a comunicação foi aberta com sucesso. Faça um print para informar.
         print("Abriu a comunicação")
 
-        #
         img = 'Projeto3/img/picara.jpg'
         imgLida = open(img, 'rb').read()
         lista_payload = monta_payload(imgLida) # Lista de payloads da imagem divida

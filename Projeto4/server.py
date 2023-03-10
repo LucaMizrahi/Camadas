@@ -14,7 +14,7 @@ from enlace import *
 import time
 import numpy as np
 from funcoes import *
-from operator import truediv
+from timer_error import Timer1Error, Timer2Error
 
 
 # voce deverá descomentar e configurar a porta com através da qual ira fazer comunicaçao
@@ -28,37 +28,56 @@ from operator import truediv
 serialName = "COM4"                  # Windows(variacao de)
 
 
+def resposta_server(tipo, numero_pacote, total_pacotes, com1):
+    head = monta_head(tipo, 0, 0, total_pacotes, numero_pacote, 0, numero_pacote, (numero_pacote - 1))
+    pacote = head + EOP
+    com1.sendData(pacote)
+    time.sleep(0.1)
+    log_write(ARQUIVO, 'envio', tipo, 14)
+
+
 '''
-Informações do Head: (12 bytes de tamanho) - Serve para passar informações sobre a msg que será enviada
-
-    1 byte - tipo de mensagem  - b'\x01' - Tamanho do payload incorreto, b'\x02' - Tamanho do payload correto
-    2 byte - Verifica handshake 
-    3 byte - Numero de bytes do payload
-    4 .. 12 byte - placeholders
-
-Bytes de EOP: (3 bytes de tamanho) - Serve para indicar o fim da mensagem
-
-    1 byte - b'\x01'
-    2 byte - b'\x02'
-    3 byte - b'\x03'
+Parametros: (head)
+    h0(byte): Tipo de mensagem (dados, comando etc.).
+    h1(byte): Se for tipo1: número do servidor. Qualquer outro tipo: livre
+    h2(byte): Livre.
+    h3(bytes): Número total de pacotes do arquivo.
+    h4(byte): Número do pacote
+    h5(byte): Se a mensagem for do tipo HandShake, representa o id do arquivo,
+    se for do tipo de dados: representa o tamanho do payload.
+    h6(byte): pacote solicitado para recomeço quando a erro no envio.
+    h7(byte): último pacote recebido com sucesso.
+    h8(byte): CRC. (Em branco)
+    h9(byte): CRC. (Em branco)
 '''
 
-HEAD_server_handshake = bytes([9,1,0,0,0,0,0,0,0,0,0,0])
+# Chamado do cliente para o servidor 
+TIPO1 = 1
+# Resposta do servidor para o cliente
+TIPO2 = 2
+# Mensagem contendo o tipo de dados
+TIPO3 = 3
+# Mensagem enviada ao servidor relatando que a mensagem do tipo 3 foi recebida e averiguada
+TIPO4 = 4
+# Mensagem de time out, toda vez que o limite de espera exceder, esta mensagem será enviada (tanto cliewnte quanto servidor)
+TIPO5 = 5
+# Mensagem de erro, servidor envia para o cliente quando ocorre algum erro na mensagem tipo 3 - orienta cliente a enviar novamente
+TIPO6 = 6
 
-EOP = bytes([1, 2, 3]) 
+# End of Package (4 bytes)
+EOP = '\xAA\xBB\xCC\xDD' 
+
+ARQUIVO = 'server1.txt'
+SERVER_ID = 1
 
 def main():
     try:
-        print("Iniciou o main")
-        #declaramos um objeto do tipo enlace com o nome "com". Essa é a camada inferior à aplicação. Observe que um parametro
-        #para declarar esse objeto é o nome da porta.
         com1 = enlace(serialName)
-        
-        # Ativa comunicacao. Inicia os threads e a comunicação seiral 
         com1.enable()
-        #Se chegamos até aqui, a comunicação foi aberta com sucesso. Faça um print para informar.
-        print("Abriu a comunicação")
-
+        content = b''
+        contador = 0
+        reenvio = False
+        
         # Esperando byte de sacrifício
         print("esperando 1 byte de sacrifício")
         rxBuffer, nRx = com1.getData(1)
@@ -66,84 +85,105 @@ def main():
         time.sleep(0.1)
         print('byte de sacrifício recebido')	
 
-        HEAD_client_handshake, _ = com1.getData(12)
+        # Recebendo Handshake
+        HEAD_client_handshake, _ = com1.getData(10, timer1, timer2)
+        end_of_package, _ = com1.getData(4, timer1, timer2)
+        log_write(ARQUIVO, 'recebimento', 1, 14)
+        total_pacotes = HEAD_client_handshake[3]
+        id_client = HEAD_client_handshake[6]
         time.sleep(0.1)
-        is_handshake_correct = verifica_handshake(HEAD_client_handshake, False)
-        total_packages = HEAD_client_handshake[4]
+        # Checagem de handshake
+        if HEAD_client_handshake[0] == b'\x01' and end_of_package == EOP:
+            print('Handshake recebido')
+            if HEAD_client_handshake[1] == SERVER_ID:
+                print('Handshake correto') 
 
-        if is_handshake_correct:
-            tamanho_payload = int(HEAD_client_handshake[2])
-            resto_handshake_client, _ = com1.getData(tamanho_payload+3)
-            time.sleep(0.1)
-            handshake_client = HEAD_client_handshake + resto_handshake_client
-            verificacao_eop = verifica_eop(HEAD_client_handshake, handshake_client)
-            if not verificacao_eop:
-                return
-            else:
-                handshake_server = np.asarray(HEAD_server_handshake + EOP)
-                com1.sendData(handshake_server)
+                # Enviando resposta do handshake                  
+                HEAD_server_handshake = monta_head(TIPO2, 0, 0, 0, 0, 0, 0, 0)
+                server_handshake = HEAD_server_handshake + EOP
+                com1.sendData(server_handshake)
+                log_write(ARQUIVO, 'envio', 2, 14)
+                print('Resposta do Handshake enviada, servidor ocioso e aguardando dados')
                 time.sleep(0.1)
-                print("Handshake do servidor enviado")
-
-        img_recebida = b''
-        pacote_antes = 1
-        pacotes_recebidos = 0
-
-        while True:
-            HEAD_client, _ = com1.getData(12)
-            time.sleep(0.5)
-            tamanho_payload, pacote_atual, _ = trata_head(HEAD_client)
-            # Forçando erro no tamanho do payload
-            tamanho_payload += 1 
-            if pacote_atual != pacote_antes:
-                print("Pacote recebido fora de ordem")
-                HEAD_server = bytes([1,0,0,0,0,0,0,0,0,0,0,0])
-                com1.sendData(HEAD_server + EOP)
-                com1.disable(); return
             else:
-                HEAD_server = bytes([2,0,0,0,0,0,0,0,0,0,0,0])
-                com1.sendData(HEAD_server + EOP)
-                time.sleep(0.5)
+                print('Handsake incorreto')
 
-            pacotes_recebidos += 1
-            pacote_antes = pacote_atual
+        # Começando a trasmissão dos dados
+        img_recebida = b''
+        contador = 1
+        reenvio = False
+    
+        while contador < total_pacotes:
+            try:
+                servidor_ocioso = True
+                timer1 = time.time()
+                if not reenvio:
+                    timer2 = time.time()
 
-            resto_pacote, _ = com1.getData(tamanho_payload+3)
-            time.sleep(0.1)
+                # Pegando o primeiro pacote com dados do cliente
+                HEAD_client, _ = com1.getData(10, timer1, timer2)
+                time.sleep(0.1)
 
-            pacote_client = HEAD_client + resto_pacote
-            HEAD_client, payload_client, EOP_client = trata_pacote(pacote_client)
-            img_recebida += payload_client 
-            
-            # Verificando se o eop está no lugar correto
-            is_eop_correct = verifica_eop(HEAD_client, pacote_client)
-            if not is_eop_correct:
-                print("EOP fora do lugar")
-                com1.disable(); return
-            if pacotes_recebidos == total_packages:
+                while servidor_ocioso:
+                    if HEAD_client[0] == b'\x03':
+                        servidor_ocioso = False
+                        tamanho_msg = HEAD_client[5]
+                        numero_pacote = HEAD_client[4]
+                        log_write(ARQUIVO, 'recebimento', 3, 14+tamanho_msg, numero_pacote, total_pacotes)
+                    else:
+                        tamanho_msg = 0
+                        servidor_ocioso = False
+                        print('Mensagem não é do tipo 3')
+
+                payload, _ = com1.getData(tamanho_msg, timer1, timer2)
+                time.sleep(0.1)
+                eop = com1.getData(4, timer1, timer2)
+                time.sleep(0.1)
+                if HEAD_client[0] == b'\x01':
+                    resposta_server(TIPO2, contador, total_pacotes, com1)
+                    servidor_ocioso = True
+                    print()
+                
+                elif HEAD_client[0] == b'\x03':
+                    numero_certo = HEAD_client[4]
+                    if eop == EOP and numero_certo == contador:
+                        img_recebida += payload
+                        reenvio = False
+                        contador += 1
+                        resposta_server(TIPO4, contador, total_pacotes, com1)
+                        print('Pacote {} recebido com sucesso'.format(contador))
+                    else:
+                        if numero_certo != contador:
+                            print('Número do pacote está incorreto, reenviando pacote')
+                        if com1.rx.getBufferLen() > 0:
+                            print('Tamanho do payload está incorreto')
+                        
+                        com1.rx.clearBuffer()
+                        resposta_server(TIPO6, contador, total_pacotes, com1)
+                    servidor_ocioso = True
+                else:
+                    print('Mensagem não é tipo 1 ou 3')
+                    com1.rx.clearBuffer()
+                    resposta_server(TIPO6, contador, total_pacotes, com1)
+                    servidor_ocioso = True
+            except Timer1Error:
+                print('O tempo do timer 1 foi excedido')
+                resposta_server(TIPO6, contador, total_pacotes, com1)
+                reenvio = True
+            except Timer2Error:
+                print('O tempo do timer 2 foi excedido')
+                resposta_server(TIPO5, contador, total_pacotes, com1)
+                servidor_ocioso = True
                 break
-            if pacotes_recebidos != total_packages:
-                pacote_antes += 1
         
-        HEAD_client_final = bytes([1,0,0,0,0,0,0,0,0,0,0,0])
-        if pacotes_recebidos != total_packages:
-            print("Pacotes recebidos diferente do total de pacotes")
-        else:
-            HEAD_client_final = bytes([1,0,0,0,1,0,0,0,0,0,0,0])
-            print("Transmissão finalizada com sucesso")
-        
-        # Envia o pacote final para o cliente
-        pacote_final = HEAD_client_final + EOP
-        com1.sendData(pacote_final)
-        time.sleep(0.5)
-
-        img_recebida_nome = 'Projeto3/img/img_recebida.png'
-        print("Salvando imagem recebida")
-        with open(img_recebida_nome, 'wb') as f:
-            f.write(img_recebida)
+        if (contador - 1) == total_pacotes:
+            img_recebida_nome = 'Projeto4/img/img_recebida.png'
+            print("Salvando imagem recebida")
+            with open(img_recebida_nome, 'wb') as img_file:
+                img_file.write(img_recebida)
             print("Imagem salva com sucesso")
-            f.close()
-
+            img_file.close()
+                
         # Encerra comunicação
         print("-------------------------")
         print("Comunicação encerrada")

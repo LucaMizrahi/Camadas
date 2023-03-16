@@ -74,9 +74,7 @@ def main():
     try:
         com1 = enlace(serialName)
         com1.enable()
-        content = b''
-        contador = 0
-        reenvio = False
+        print('Abriu a comunicação')
         
         # Esperando byte de sacrifício
         print("esperando 1 byte de sacrifício")
@@ -85,95 +83,80 @@ def main():
         time.sleep(0.1)
         print('byte de sacrifício recebido')	
 
-        # Recebendo Handshake
-        HEAD_client_handshake, _ = com1.getData(10, timer1, timer2)
-        end_of_package, _ = com1.getData(4, timer1, timer2)
-        log_write(ARQUIVO, 'recebimento', 1, 14)
-        total_pacotes = HEAD_client_handshake[3]
-        id_client = HEAD_client_handshake[6]
-        time.sleep(0.1)
-        # Checagem de handshake
-        if HEAD_client_handshake[0] == b'\x01' and end_of_package == EOP:
-            print('Handshake recebido')
-            if HEAD_client_handshake[1] == SERVER_ID:
-                print('Handshake correto') 
+        ocioso = True
+        while ocioso:
+            # Recebendo Handshake
+            HEAD_client_handshake, _ = com1.getData(10, timer1, timer2)
+            end_of_package, _ = com1.getData(4, timer1, timer2)
+            log_write(ARQUIVO, 'recebimento', 1, 14)
+            total_pacotes = HEAD_client_handshake[3]
+            id_client = HEAD_client_handshake[5]
+            time.sleep(0.1)
+            # Checagem de handshake
+            if HEAD_client_handshake[0] == b'\x01' and end_of_package == EOP:
+                print('Handshake recebido')
+                if HEAD_client_handshake[1] == SERVER_ID:
+                    ocioso = False
+                    print('Handshake correto, e é para mim.') 
+                    time.sleep(1)
 
-                # Enviando resposta do handshake                  
-                HEAD_server_handshake = monta_head(TIPO2, 0, 0, 0, 0, 0, 0, 0)
-                server_handshake = HEAD_server_handshake + EOP
-                com1.sendData(server_handshake)
-                log_write(ARQUIVO, 'envio', 2, 14)
-                print('Resposta do Handshake enviada, servidor ocioso e aguardando dados')
-                time.sleep(0.1)
+                    # Enviando resposta do handshake                  
+                    HEAD_server_handshake = monta_head(TIPO2, 0, 0, 0, 0, 0, 0, 0)
+                    server_handshake = HEAD_server_handshake + EOP
+                    com1.sendData(server_handshake)
+                    log_write(ARQUIVO, 'envio', 2, 14)
+                    print('Resposta do Handshake enviada')
+                    contador = 1
+                    time.sleep(0.1)
+                else:
+                    ocioso = True
+                    print('Handshake não é para mim')
             else:
-                print('Handsake incorreto')
+                ocioso = True
+                print('Handshake incorreto')
 
         # Começando a trasmissão dos dados
         img_recebida = b''
-        contador = 1
         reenvio = False
     
-        while contador < total_pacotes:
+        while contador <= total_pacotes:
             try:
-                servidor_ocioso = True
                 timer1 = time.time()
                 if not reenvio:
                     timer2 = time.time()
 
                 # Pegando o primeiro pacote com dados do cliente
                 HEAD_client, _ = com1.getData(10, timer1, timer2)
-                time.sleep(0.1)
-
-                while servidor_ocioso:
-                    if HEAD_client[0] == b'\x03':
-                        servidor_ocioso = False
-                        tamanho_msg = HEAD_client[5]
-                        numero_pacote = HEAD_client[4]
-                        log_write(ARQUIVO, 'recebimento', 3, 14+tamanho_msg, numero_pacote, total_pacotes)
-                    else:
-                        tamanho_msg = 0
-                        servidor_ocioso = False
-                        print('Mensagem não é do tipo 3')
-
+                tamanho_msg = HEAD_client[5]
+                numero_pacote = HEAD_client[4]
                 payload, _ = com1.getData(tamanho_msg, timer1, timer2)
-                time.sleep(0.1)
                 eop = com1.getData(4, timer1, timer2)
+                log_write(ARQUIVO, 'recebimento', 3, 14+tamanho_msg, numero_pacote, total_pacotes)
                 time.sleep(0.1)
-                if HEAD_client[0] == b'\x01':
-                    resposta_server(TIPO2, contador, total_pacotes, com1)
-                    servidor_ocioso = True
-                    print()
-                
-                elif HEAD_client[0] == b'\x03':
-                    numero_certo = HEAD_client[4]
-                    if eop == EOP and numero_certo == contador:
+            
+                if HEAD_client[0] == b'\x03':
+                    if eop == EOP and numero_pacote == contador:
                         img_recebida += payload
                         reenvio = False
                         contador += 1
                         resposta_server(TIPO4, contador, total_pacotes, com1)
                         print('Pacote {} recebido com sucesso'.format(contador))
                     else:
-                        if numero_certo != contador:
+                        if numero_pacote != contador:
                             print('Número do pacote está incorreto, reenviando pacote')
                         if com1.rx.getBufferLen() > 0:
                             print('Tamanho do payload está incorreto')
                         
                         com1.rx.clearBuffer()
                         resposta_server(TIPO6, contador, total_pacotes, com1)
-                    servidor_ocioso = True
-                else:
-                    print('Mensagem não é tipo 1 ou 3')
-                    com1.rx.clearBuffer()
-                    resposta_server(TIPO6, contador, total_pacotes, com1)
-                    servidor_ocioso = True
+
             except Timer1Error:
                 print('O tempo do timer 1 foi excedido')
-                resposta_server(TIPO6, contador, total_pacotes, com1)
+                resposta_server(TIPO4, contador, total_pacotes, com1)
                 reenvio = True
             except Timer2Error:
                 print('O tempo do timer 2 foi excedido')
                 resposta_server(TIPO5, contador, total_pacotes, com1)
-                servidor_ocioso = True
                 break
         
         if (contador - 1) == total_pacotes:

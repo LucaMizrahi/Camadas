@@ -48,19 +48,6 @@ def verifica_ordem(recebido, numero_pacote_atual): # Função usada pelo server 
         print('Pacote recebido fora de ordem')
         return False
 
-def monta_payload(info):
-    tamanho = len(info)
-    pacotes = ceil(tamanho/50) # 50 é o tamanho máximo do payload
-    payloads = []
-    for i in range(pacotes):
-        if i == pacotes-1:
-            payload = info[i*50:tamanho]
-            print(f'tamanho do último payload:{len(payload)}')
-        else:
-            payload = info[i*50:(i+1)*50]
-            print(f'tamanho dos payloads intermediários:{len(payload)}')
-        payloads.append(payload)
-    return payloads
 
 def junta_payloads(lista_payloads, tamanho_info, numero_pacotes): # Função para juntar os payloads em um único array e verificar se o número está correto
     info_total = b''
@@ -94,8 +81,8 @@ Parametros:
     h8(byte): CRC. (Em branco)
     h9(byte): CRC. (Em branco)
 '''
-    header = bytes([h0, h1, h2, h3, h4, h5, h6, h7, 0, 0])
-    return header
+    head = bytes([h0, h1, h2, h3, h4, h5, h6, h7, 0, 0])
+    return head
 
 def log_write(arquivo:str, operacao:str, tipo:int, tamanho:int, pacote_enviado:int=None, total_pacotes:int=None):
     '''

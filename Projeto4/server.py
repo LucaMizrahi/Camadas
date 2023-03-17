@@ -67,7 +67,7 @@ TIPO6 = 6
 # End of Package (4 bytes)
 EOP = b'\xAA\xBB\xCC\xDD' 
 
-ARQUIVO = 'server1.txt'
+ARQUIVO = 'server3.txt'
 SERVER_ID = 1
 
 def main():

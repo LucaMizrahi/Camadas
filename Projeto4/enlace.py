@@ -42,3 +42,7 @@ class enlace(object):
     def getData(self, size, timer1, timer2):
         data = self.rx.getNData(size, timer1, timer2)
         return(data, len(data))
+    
+    def getDataNormal(self, size):
+        data = self.rx.getNDataNormal(size)
+        return(data, len(data))

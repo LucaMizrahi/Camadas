@@ -79,6 +79,10 @@ class RX(object):
                 raise Timer1Error()                
         return(self.getBuffer(size))
 
+    def getNDataNormal(self, size):
+            while(self.getBufferLen() < size):
+                time.sleep(0.05)                 
+            return(self.getBuffer(size))
 
     def clearBuffer(self):
         self.buffer = b""

@@ -25,7 +25,7 @@ from timer_error import Timer1Error, Timer2Error
 #use uma das 3 opcoes para atribuir à variável a porta usada
 #serialName = "/dev/ttyACM0"           # Ubuntu (variacao de)
 #serialName = "/dev/tty.usbmodem1411" # Mac    (variacao de)
-serialName = "COM4"                  # Windows(variacao de)
+serialName = "COM3"                  # Windows(variacao de)
 
 
 def resposta_server(tipo, numero_pacote, total_pacotes, com1):
@@ -78,7 +78,7 @@ def main():
         
         # Esperando byte de sacrifício
         print("esperando 1 byte de sacrifício")
-        rxBuffer, nRx = com1.getData(1)
+        rxBuffer, nRx = com1.getDataNormal(1)
         com1.rx.clearBuffer() # Limpa o buffer de recebimento para receber os comandos
         time.sleep(0.1)
         print('byte de sacrifício recebido')	
@@ -86,8 +86,8 @@ def main():
         ocioso = True
         while ocioso:
             # Recebendo Handshake
-            HEAD_client_handshake, _ = com1.getData(10, timer1, timer2)
-            end_of_package, _ = com1.getData(4, timer1, timer2)
+            HEAD_client_handshake, _ = com1.getDataNormal(10)
+            end_of_package, _ = com1.getDataNormal(4)
             log_write(ARQUIVO, 'recebimento', 1, 14)
             total_pacotes = HEAD_client_handshake[3]
             id_client = HEAD_client_handshake[5]

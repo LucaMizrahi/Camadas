@@ -124,42 +124,50 @@ def main():
                 timer1 = time.time()
                 if not reenvio:
                     timer2 = time.time()
+                
+                reenvio = True
+                while reenvio:
 
-                # Pegando o primeiro pacote com dados do cliente
-                HEAD_client, _ = com1.getData(10, timer1, timer2)
-                tamanho_msg = HEAD_client[5]
-                numero_pacote = HEAD_client[4]
-                payload, _ = com1.getData(tamanho_msg, timer1, timer2)
-                eop = com1.getData(4, timer1, timer2)
-                log_write(ARQUIVO, 'recebimento', 3, 14+tamanho_msg, numero_pacote, total_pacotes)
-                time.sleep(0.1)
-            
-                if HEAD_client[0] == b'\x03':
-                    if eop == EOP and numero_pacote == contador:
-                        img_recebida += payload
-                        reenvio = False
-                        contador += 1
-                        resposta_server(TIPO4, contador, total_pacotes, com1)
-                        print('Pacote {} recebido com sucesso'.format(contador))
-                    else:
-                        if numero_pacote != contador:
-                            print('Número do pacote está incorreto, reenviando pacote')
-                        if com1.rx.getBufferLen() > 0:
-                            print('Tamanho do payload está incorreto')
-                        
-                        com1.rx.clearBuffer()
-                        resposta_server(TIPO6, contador, total_pacotes, com1)
+                    # Recebendo os pacotes com dados
+                    HEAD_client, _ = com1.getData(10, timer1, timer2)
+                    tamanho_msg = HEAD_client[5]
+                    numero_pacote = HEAD_client[4]
+                    payload, _ = com1.getData(tamanho_msg, timer1, timer2)
+                    eop = com1.getData(4, timer1, timer2)
+                    log_write(ARQUIVO, 'recebimento', 3, 14+tamanho_msg, numero_pacote, total_pacotes)
+                    time.sleep(1)
 
-            except Timer1Error:
+                    # Tratamento dos pacotes recebidos
+                    if HEAD_client[0] == b'\x03':
+                        if eop == EOP and numero_pacote == contador: # Transmissão de sucesso
+                            img_recebida += payload
+                            reenvio = False
+                            contador += 1
+                            resposta_server(TIPO4, contador, total_pacotes, com1)
+                            print('Pacote {} recebido com sucesso'.format(contador))
+                        else:  # Transmissão com erro
+                            if numero_pacote != contador:
+                                print('Número do pacote está incorreto, reenviar pacote')
+                            if com1.rx.getBufferLen() > 0:
+                                print('Tamanho do payload está incorreto, reenviar pacote')
+                            
+                            com1.rx.clearBuffer()
+                            resposta_server(TIPO6, contador, total_pacotes, com1)
+                            reenvio = True
+
+            except Timer1Error: 
                 print('O tempo do timer 1 foi excedido')
                 resposta_server(TIPO4, contador, total_pacotes, com1)
                 reenvio = True
             except Timer2Error:
-                print('O tempo do timer 2 foi excedido')
+                print('TIMEOUT, o tempo do timer 2 foi excedido, desativando comunicação')
                 resposta_server(TIPO5, contador, total_pacotes, com1)
+                com1.disable()
                 break
         
         if (contador - 1) == total_pacotes:
+            print(f'Contador: {contador}')
+            print(f'Total de pacotes: {total_pacotes}')
             img_recebida_nome = 'Projeto4/img/img_recebida.png'
             print("Salvando imagem recebida")
             with open(img_recebida_nome, 'wb') as img_file:

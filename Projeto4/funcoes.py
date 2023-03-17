@@ -1,70 +1,7 @@
 import numpy as np
 from math import ceil
 import time
-from datetime import datetime
-
-# End of Package    
-EOP = b'\xAA\xBB\xCC\xDD' 
-
-
-def atualiza_tempo(tempo_referencia):
-    tempo_atual = time.time()
-    ref = tempo_atual - tempo_referencia
-    return ref
-
-def verifica_eop(head, pacote): # Função para verificar se o payload está correto
-    tamanho = head[2] # Tamanho = 3º byte do head = 0
-    eop = pacote[12+tamanho:]
-    if eop == b'\x01\x02\x03':
-        print('Payload recebido com sucesso, esperando próximo pacote')
-        return True
-    else:
-        print('Payload não recebido corretamente')
-        return False
-
-def verifica_handshake(head, is_server): # Função para verificar se o handshake está correto
-    handshake = head[:2] #Pega os dois primeiros bytes do head
-    delta_tempo = 0
-
-    combinado = bytes([9, 1])
-    if not is_server:
-        combinado = bytes([8, 0])
-    while delta_tempo <= 5:
-        tempo_atual = time.time()
-        if handshake == combinado: 
-            print('Handshake realizado com sucesso')
-            return True
-        delta_tempo = atualiza_tempo(tempo_atual)
-    return False
-
-
-def verifica_ordem(recebido, numero_pacote_atual): # Função usada pelo server para verificar se o pacote está na ordem correta
-    head = recebido[:10]
-    numero_pacote = head[4] # 5º byte do head = número do pacote
-    if numero_pacote == numero_pacote_atual:
-        print('Pacote recebido na ordem correta')
-        return True
-    else:
-        print('Pacote recebido fora de ordem')
-        return False
-
-
-def junta_payloads(lista_payloads, tamanho_info, numero_pacotes): # Função para juntar os payloads em um único array e verificar se o número está correto
-    info_total = b''
-    for payload in lista_payloads:
-        info_total += payload
-    
-    if numero_pacotes == tamanho_info:
-        return True
-    else:
-        return False
-
-def trata_head(head):
-    tamanho_payload = head[2]
-    numero_pacote = head[3]
-    numero_total_pacotes = head[4]
-
-    return tamanho_payload, numero_pacote, numero_total_pacotes
+from datetime import datetime 
 
 def monta_head(h0, h1, h2, h3, h4, h5, h6, h7):
     '''
@@ -101,7 +38,7 @@ def log_write(arquivo:str, operacao:str, tipo:int, tamanho:int, pacote_enviado:i
     if not pacote_enviado:
         pacote_enviado = ''
     
-    with open(f'logs/{arquivo}', 'a') as f:
-        conteudo = f'{datetime.now()} /{operacao}/Tipo:{tipo}/Tamanho:{tamanho}/Nºpacote:{pacote_enviado}/TotalPacotes:{total_pacotes} \n'
+    with open(f'Projeto4/logs/{arquivo}', 'a') as f:
+        conteudo = f'{datetime.now()} /{operacao}/Tipo:{tipo}/Tamanho:{tamanho}/Num_pacote:{pacote_enviado}/TotalPacotes:{total_pacotes} \n'
         f.write(conteudo)
 

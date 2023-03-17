@@ -30,9 +30,9 @@ serialName = "COM3"                  # Windows(variacao de)
 
 def resposta_server(tipo, numero_pacote, total_pacotes, com1):
     head = monta_head(tipo, 0, 0, total_pacotes, numero_pacote, 0, numero_pacote, (numero_pacote - 1))
-    pacote = head + EOP
+    pacote = np.asarray(head + EOP)
     com1.sendData(pacote)
-    time.sleep(0.1)
+    time.sleep(0.5)
     log_write(ARQUIVO, 'envio', tipo, 14)
 
 
@@ -65,7 +65,7 @@ TIPO5 = 5
 TIPO6 = 6
 
 # End of Package (4 bytes)
-EOP = '\xAA\xBB\xCC\xDD' 
+EOP = b'\xAA\xBB\xCC\xDD' 
 
 ARQUIVO = 'server1.txt'
 SERVER_ID = 1
@@ -85,24 +85,25 @@ def main():
 
         ocioso = True
         while ocioso:
-            # Recebendo Handshake
+            # Recebendo 
+            print('entra no while')
             HEAD_client_handshake, _ = com1.getDataNormal(10)
             end_of_package, _ = com1.getDataNormal(4)
             log_write(ARQUIVO, 'recebimento', 1, 14)
             total_pacotes = HEAD_client_handshake[3]
-            id_client = HEAD_client_handshake[5]
+            print('Pega handshake')
             time.sleep(0.1)
             # Checagem de handshake
-            if HEAD_client_handshake[0] == b'\x01' and end_of_package == EOP:
+            if HEAD_client_handshake[0] == 1 and end_of_package == EOP:
                 print('Handshake recebido')
-                if HEAD_client_handshake[1] == SERVER_ID:
+                if HEAD_client_handshake[1] == 1:
                     ocioso = False
                     print('Handshake correto, e é para mim.') 
                     time.sleep(1)
 
                     # Enviando resposta do handshake                  
                     HEAD_server_handshake = monta_head(TIPO2, 0, 0, 0, 0, 0, 0, 0)
-                    server_handshake = HEAD_server_handshake + EOP
+                    server_handshake = np.asarray(HEAD_server_handshake + EOP)
                     com1.sendData(server_handshake)
                     log_write(ARQUIVO, 'envio', 2, 14)
                     print('Resposta do Handshake enviada')
@@ -133,21 +134,23 @@ def main():
                     tamanho_msg = HEAD_client[5]
                     numero_pacote = HEAD_client[4]
                     payload, _ = com1.getData(tamanho_msg, timer1, timer2)
-                    eop = com1.getData(4, timer1, timer2)
+                    eop, _ = com1.getData(4, timer1, timer2)
                     log_write(ARQUIVO, 'recebimento', 3, 14+tamanho_msg, numero_pacote, total_pacotes)
                     time.sleep(1)
 
                     # Tratamento dos pacotes recebidos
-                    if HEAD_client[0] == b'\x03':
-                        if eop == EOP and numero_pacote == contador: # Transmissão de sucesso
+                    if HEAD_client[0] == 3:
+                        if contador == numero_pacote and eop == EOP: # Transmissão de sucesso
                             img_recebida += payload
                             reenvio = False
-                            contador += 1
-                            resposta_server(TIPO4, contador, total_pacotes, com1)
                             print('Pacote {} recebido com sucesso'.format(contador))
+                            resposta_server(TIPO4, contador, total_pacotes, com1)
+                            contador += 1
                         else:  # Transmissão com erro
                             if numero_pacote != contador:
-                                print('Número do pacote está incorreto, reenviar pacote')
+                                print(numero_pacote)
+                                print(contador)
+                                print(f'Número do pacote está incorreto, reenviar pacote {contador}')
                             if com1.rx.getBufferLen() > 0:
                                 print('Tamanho do payload está incorreto, reenviar pacote')
                             

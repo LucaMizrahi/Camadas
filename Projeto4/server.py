@@ -15,6 +15,7 @@ import time
 import numpy as np
 from funcoes import *
 from timer_error import Timer1Error, Timer2Error
+from crccheck.crc import Crc16
 
 
 # voce deverá descomentar e configurar a porta com através da qual ira fazer comunicaçao
@@ -135,12 +136,19 @@ def main():
                     numero_pacote = HEAD_client[4]
                     payload, _ = com1.getData(tamanho_msg, timer1, timer2)
                     eop, _ = com1.getData(4, timer1, timer2)
+                    
+                    #Checagem por CRC
+                    crc = Crc16().calc(payload)
+                    crc = int.to_bytes(crc, 2, byteorder='big')
+                    crc1 = crc[0]
+                    crc2 = crc[1]
+
                     log_write(ARQUIVO, 'recebimento', 3, 14+tamanho_msg, numero_pacote, total_pacotes)
                     time.sleep(1)
 
                     # Tratamento dos pacotes recebidos
                     if HEAD_client[0] == 3:
-                        if contador == numero_pacote and eop == EOP: # Transmissão de sucesso
+                        if contador == numero_pacote and eop == EOP and crc1 == HEAD_client[8] and crc2 == HEAD_client[9]: # Transmissão de sucesso
                             img_recebida += payload
                             reenvio = False
                             print('Pacote {} recebido com sucesso'.format(contador))
